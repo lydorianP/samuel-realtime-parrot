@@ -146,5 +146,89 @@ Wine: `wine-11.16` native smoke ok, `python.exe` not in Wine prefix (manual inst
 
 Launch: `uv run python -m samuel_realtime --out-device Samuel_Virtual_Mic --vad-silence 0.45` → speak “Hello Samuel”, parrot after ~450ms.
 
+## Phase 4 — Kaggle Training (2x T4, never TPU)
+
+> **Accelerator: GPU T4 x2** (32GB). SEANet `weight_norm` + causal `Conv1d` → XLA fails. `2x T4 CUDA` perfect; `batch 16` not 64 (waveguide OOM).
+
+### Notebook Blueprint (`kaggle/kaggle_train.ipynb` — canonical `kaggle/kaggle_train.py`)
+
+**Kaggle Settings:** `T4 x2`, Internet ON, Persistence ON. Attach dataset `my-voice-wavs` (folder `.wav`, 44100 or any rate, 30-60 min varied). Add Secrets `GH_TOKEN` (for private repo) + `HF_TOKEN` (to push).
+
+**Cell 1 — Env & Repo:**
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+export PATH="/root/.local/bin:$PATH"
+git clone https://$GH_TOKEN@github.com/lydorianP/samuel-realtime-parrot.git  # private via secret
+cd samuel-realtime-parrot
+uv python install 3.12 && uv sync
+uv pip install -e vendor/samuel  # hydra/omegaconf/wandb/transformers for train.py
+```
+
+**Cell 2 — Prepare Data (fixed `prepare_custom_dataset.py`):**
+```bash
+uv run python scripts/prepare_custom_dataset.py \
+  --wav-dir /kaggle/input/my-voice-wavs \
+  --manifest manifests/custom.jsonl \
+  --pitch-cache manifests/pitch_cache/custom_spf512.npz \
+  --sample-rate 44100 --samples-per-frame 512  # 512 matches checkpoint, 2048 for base
+# → manifest + pitch cache with correct header (sample_rate, samples_per_frame, control_rate, pyin 70-500/4096, n_files)
+```
+
+**Cell 3 — DDP Training:**
+```bash
+nvidia-smi  # verify 2x T4
+torchrun --standalone --nproc_per_node=2 -m samuel.train \
+  run.name=kaggle_custom_voice_ft \
+  data.manifest_path=manifests/custom.jsonl \
+  data.pitch_cache_path=manifests/pitch_cache/custom_spf512.npz \
+  batch_size=16 optim.max_steps=5000 optim.warmup_steps=500 \
+  log.eval_every=500 log.ckpt_every=1000 log.wandb_mode=offline
+# If OOM → batch_size 8
+```
+
+**Cell 4 — Extract:**
+```python
+import shutil, pathlib
+ckpt_dir = max(pathlib.Path("runs").glob("kaggle_custom_voice_ft_*")) / "checkpoints"
+latest = max(ckpt_dir.glob("*.pt"), key=lambda p: p.stat().st_mtime)
+shutil.copy(latest, "/kaggle/working/samuel_custom_last.pt")
+shutil.copy(latest.parent.parent/"config.json", "/kaggle/working/custom_config.json")
+# → /kaggle/working/samuel_custom_last.pt (14M) for download; also samuel_custom_last.pt persists if Save Output ON
+```
+
+**Cell 5 (optional) — Push to HF:**
+```bash
+huggingface-cli login --token $HF_TOKEN
+uv run hf upload lydorianP/samuel-custom /kaggle/working/samuel_custom_last.pt --repo-type model
+```
+
+### After Kaggle — Local Re-Export
+
+```bash
+# 1. Download samuel_custom_last.pt from Kaggle Output
+./scripts/re_export_custom.sh samuel_custom_last.pt models/samuel_custom_controller.onnx
+# → models/samuel_custom_controller.onnx 395KB + 14M data, verify diff 0.0
+
+# 2. Swap checkpoint
+SAMUEL_CHECKPOINT=samuel_custom_last.pt uv run python -m samuel_realtime --out-device Samuel_Virtual_Mic --onnx models/samuel_custom_controller.onnx --provider webgpu
+
+# Windows (no HIP):
+python -m samuel_realtime --out-device "CABLE Input" --onnx models\samuel_custom_controller.onnx --provider webgpu --checkpoint samuel_custom_last.pt
+```
+
+### Director's Notes
+
+- **SSL 1.0 kept** (`facebook/wav2vec2-base-960h`, 360M) — perceptual loss, MFCC-only → squeaks. Don't disable.
+- **Batch 16** (64 OOMs on waveguide), drop to 8 if still OOM.
+- **30-60 min** varied speech minimum, else memorization ~500 steps.
+- **Local test** without Kaggle:
+```bash
+mkdir -p /tmp/my-voice-wavs && uv run python -c "import numpy as np,soundfile as sf; sr=44100; t=np.arange(sr*2)/sr; sf.write('/tmp/my-voice-wavs/a.wav',0.3*np.sin(2*np.pi*220*t),sr)"
+uv run python scripts/prepare_custom_dataset.py --wav-dir /tmp/my-voice-wavs --manifest manifests/test.jsonl --pitch-cache manifests/pitch_cache/test_spf512.npz --samples-per-frame 512
+uv run python -c "import numpy as np; d=np.load('manifests/pitch_cache/test_spf512.npz'); print(d['n_files'], d['sample_rate'])"
+```
+
+Docs: `kaggle/README.md`, scripts `prepare_custom_dataset.py` + `re_export_custom.sh`, notebook `kaggle/kaggle_train.ipynb` (± `kaggle_train.py`).
+
 ```
 
