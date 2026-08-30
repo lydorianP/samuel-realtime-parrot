@@ -15,3 +15,11 @@ __all__ = [
     "get_virtual_input_name",
     "play_test_tone",
 ]
+
+# Re-export key classes for convenience
+try:
+    from .inference import SamuelEngine  # noqa: F401
+    from .vad import SileroVAD, VADProcessor  # noqa: F401
+    from .pipeline import RealtimePipeline  # noqa: F401
+except Exception:
+    pass

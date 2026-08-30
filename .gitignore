@@ -3,9 +3,9 @@ __pycache__/
 *.pyc
 *.pyo
 *.egg-info/
-uv.lock
 *.pt
 *.onnx
+*.onnx.data
 .DS_Store
 .vscode/
 .idea/
@@ -13,3 +13,5 @@ runs/
 *.wav
 *.mp3
 hf_cache/
+models/
+__pycache__/

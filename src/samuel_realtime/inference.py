@@ -157,18 +157,19 @@ class SamuelEngine:
         return model
 
     def warm_up(self) -> None:
-        """JIT-compile librosa.pyin + run one throwaway mimic so first real utterance is fast."""
+        """JIT-compile librosa.pyin + synth kernels for multiple phrase lengths."""
         if self.model is None:
             raise RuntimeError("call load() before warm_up()")
-        # 0.5s tone at 140 Hz, same as server.py:_warm_up
-        t = np.arange(SAMPLE_RATE // 2, dtype=np.float32) / SAMPLE_RATE
-        tone = 0.3 * np.sin(2 * np.pi * 140.0 * t, dtype=np.float32)
-        try:
-            self.mimic(tone)
-        except Exception as e:
-            logger.warning("warm-up failed (%s); first inference will be slow", e)
-        else:
-            logger.info("warm-up done")
+        # Warm multiple durations to cover dynamic shapes (0.5s is server.py default,
+        # but 1.5s/2s/4s are common phrases — each shape triggers a new torch graph)
+        for sec in [0.5, 1.0, 1.5, 2.0, 4.0]:
+            t = np.arange(int(SAMPLE_RATE * sec), dtype=np.float32) / SAMPLE_RATE
+            tone = 0.3 * np.sin(2 * np.pi * 140.0 * t, dtype=np.float32)
+            try:
+                self.mimic(tone)
+            except Exception as e:
+                logger.warning("warm-up %.1fs failed (%s)", sec, e)
+        logger.info("warm-up done (multi-shape)")
 
     def infer_controller(self, audio: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """Run SEANet controller on float32 audio @44100; returns (params [T_ctrl, N_PARAMS], voiced [T_ctrl])."""
