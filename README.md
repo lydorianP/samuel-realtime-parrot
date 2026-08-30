@@ -29,5 +29,42 @@ hf download vvolhejn/samuel
 - `vendor/samuel` — git submodule `vvolhejn/samuel` (source for `pink_trombone.py` 1082 lines, `model.py`, `server.py`)
 - `src/samuel_realtime_parrot/` — library skeleton (uv --lib)
 - `pyproject.toml` / `uv.lock` — base deps (torch is external ROCm wheel, not in lock)
+
+## Phase 1 — Audio Routing & I/O
+
+### Linux (PipeWire/PulseAudio)
+
+```bash
+./scripts/setup_virtual_mic.sh          # creates null-sink SamuelMic (idempotent)
+uv run python -m samuel_realtime.audio_io --list   # verify device 15 Samuel_Virtual_Mic
+uv run python -m samuel_realtime.audio_io --test   # 440Hz tone to virtual sink (monitor via pavucontrol)
+# or explicit
+uv run python src/samuel_realtime/audio_io.py --list
+```
+
+Module: `src/samuel_realtime/audio_io.py` — cross-platform enumeration:
+- Windows sigs: `CABLE Input` (playback) / `CABLE Output` (recording) via VB-Audio
+- Linux sigs: `Samuel_Virtual_Mic` / `SamuelMic` null-sink, monitor source auto-detected
+- Auto samplerate from `default_samplerate` (PipeWire sink 48000, model 44100 needs resample in Thread C)
+
+Routing:
+- Python `OutputStream(device="Samuel_Virtual_Mic")` → virtual speaker
+- Discord/Zoom input → `"Monitor of Samuel_Virtual_Mic"`
+
+Persistence: add `load-module module-null-sink sink_name=SamuelMic ...` to `~/.config/pulse/default.pa`
+
+### Windows (VB-CABLE)
+
+VB-CABLE requires admin install + reboot — not automatable. Verify:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\check_vbcable.ps1
+# expects PnP "VB-Audio" + MMDevices "CABLE Input/Output"
+# Install from https://vb-audio.com/Cable/ if missing
+```
+
+Wine note: checker shows no devices under Wine/vkd3d — expected, use native Windows for final.
+
+Dependencies verified: `sounddevice 0.5.6`, `numpy 2.5.2`, `scipy 1.18.1` (already in `uv.lock`).
 ```
 
