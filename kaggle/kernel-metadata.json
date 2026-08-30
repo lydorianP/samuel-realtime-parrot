@@ -1,5 +1,5 @@
 {
-  "id": "barbarabhb/samuel-realtime-parrot-custom-train",
+  "id": "lydorandlydor/samuel-realtime-parrot-custom-train",
   "title": "Samuel Realtime Parrot Custom Train",
   "code_file": "kaggle_train.ipynb",
   "language": "python",
@@ -8,9 +8,7 @@
   "enable_gpu": true,
   "enable_tpu": false,
   "enable_internet": true,
-  "dataset_sources": [
-    "barbarabhb/my-voice-wavs"
-  ],
+  "dataset_sources": [],
   "competition_sources": [],
   "kernel_sources": []
 }
