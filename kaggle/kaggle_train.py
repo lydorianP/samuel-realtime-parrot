@@ -24,7 +24,7 @@ try:
     from kaggle_secrets import UserSecretsClient
     GH_TOKEN = UserSecretsClient().get_secret("GH_TOKEN")
 except Exception:
-    GH_TOKEN = os.environ.get("GH_TOKEN", "")
+    GITHUB_SSH_KEY = os.environ.get("GITHUB_SSH_KEY","")  # SSH private key, not GH_TOKEN
 REPO = "lydorianP/samuel-realtime-parrot"
 if GH_TOKEN:
     !git clone https://$GH_TOKEN@github.com/$REPO.git
