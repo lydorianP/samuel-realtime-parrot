@@ -40,7 +40,7 @@ else:
 
 # Install vendor/samuel training deps (hydra, omegaconf, wandb, transformers, etc.)
 # Kaggle's torch is CUDA, so vendor's torch==2.8.* will be satisfied
-!git submodule update --init --recursive && uv pip install -e vendor/samuel --no-deps 2>&1 | tail -n 20
+!git submodule update --init --recursive && uv pip install -e vendor/samuel 2>&1 | tail -n 20
 # If above fails due to torch version pin, use --no-deps and rely on Kaggle's torch:
 # !uv pip install --no-deps -e vendor/samuel
 
