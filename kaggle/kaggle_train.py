@@ -136,15 +136,41 @@ else:
 # ========== Optional Cell 5: Push to HF (so Windows can download without HIP) ==========
 """
 # After Cell 4, optionally push to HF for Windows WebGPU download
-# Set HF_TOKEN as Kaggle Secret, then:
+# Set HF_TOKEN as Kaggle Secret (HF_TOKEN), then:
 import os
 HF_TOKEN = os.environ.get("HF_TOKEN")
+HF_REPO = "barbarabhb/samuel-realtime-parrot-custom"
 if HF_TOKEN:
-    !pip install -q huggingface_hub
-    !huggingface-cli login --token $HF_TOKEN --add-to-git-credential
-    !uv run hf upload lydorianP/samuel-custom /kaggle/working/samuel_custom_last.pt --repo-type model
-    !uv run hf upload lydorianP/samuel-custom /kaggle/working/custom_config.json --repo-type model
-    print("Uploaded to hf:lydorianP/samuel-custom")
+    # Use huggingface_hub library to create repo if missing and upload
+    from huggingface_hub import create_repo, upload_file
+    import subprocess
+    # Ensure repo exists (private)
+    try:
+        create_repo(HF_REPO, repo_type="model", private=True, exist_ok=True, token=HF_TOKEN)
+        print(f"Ensured HF repo exists: https://huggingface.co/{HF_REPO}")
+    except Exception as e:
+        print(f"create_repo warning: {e}")
+    # Prefer hf CLI if available, else use upload_file
+    try:
+        subprocess.run(["huggingface-cli", "login", "--token", HF_TOKEN, "--add-to-git-credential"], check=False)
+    except Exception:
+        pass
+    # Try hf CLI upload (uv run hf)
+    import subprocess as sp
+    try:
+        sp.run(["uv", "run", "hf", "upload", HF_REPO, "/kaggle/working/samuel_custom_last.pt", "--repo-type", "model"], check=True)
+        sp.run(["uv", "run", "hf", "upload", HF_REPO, "/kaggle/working/custom_config.json", "--repo-type", "model"], check=True)
+        print(f"Uploaded via hf CLI to hf:{HF_REPO}")
+    except Exception as e:
+        print(f"hf CLI upload failed ({e}), trying huggingface_hub upload_file")
+        try:
+            upload_file(path_or_fileobj="/kaggle/working/samuel_custom_last.pt", path_in_repo="samuel_custom_last.pt", repo_id=HF_REPO, repo_type="model", token=HF_TOKEN)
+            upload_file(path_or_fileobj="/kaggle/working/custom_config.json", path_in_repo="config.json", repo_id=HF_REPO, repo_type="model", token=HF_TOKEN)
+            print(f"Uploaded via upload_file to https://huggingface.co/{HF_REPO}")
+        except Exception as e2:
+            print(f"HF push failed: {e2}")
+    print(f"HF repo: https://huggingface.co/{HF_REPO}")
 else:
-    print("Set HF_TOKEN secret to push")
+    print("Set HF_TOKEN secret to push — notebook reads from os.environ.get('HF_TOKEN'), never hardcoded")
+    print("Add HF_TOKEN in Kaggle UI: Notebook → Add-ons → Secrets → Add HF_TOKEN")
 """
