@@ -1,0 +1,3 @@
+[submodule "vendor/samuel"]
+	path = vendor/samuel
+	url = https://github.com/vvolhejn/samuel

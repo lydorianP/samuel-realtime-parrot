@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+uv.lock
+*.pt
+*.onnx
+.DS_Store
+.vscode/
+.idea/
+runs/
+*.wav
+*.mp3
+hf_cache/
