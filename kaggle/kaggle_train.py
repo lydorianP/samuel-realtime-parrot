@@ -19,7 +19,11 @@ uv --version
 
 # Clone private repo — via GH_TOKEN secret if private
 import os
-GH_TOKEN = os.environ.get("GH_TOKEN", "")
+try:
+    from kaggle_secrets import UserSecretsClient
+    GH_TOKEN = UserSecretsClient().get_secret("GH_TOKEN")
+except Exception:
+    GH_TOKEN = os.environ.get("GH_TOKEN", "")
 REPO = "lydorianP/samuel-realtime-parrot"
 if GH_TOKEN:
     !git clone https://$GH_TOKEN@github.com/$REPO.git
@@ -138,7 +142,11 @@ else:
 # After Cell 4, optionally push to HF for Windows WebGPU download
 # Set HF_TOKEN as Kaggle Secret (HF_TOKEN), then:
 import os
-HF_TOKEN = os.environ.get("HF_TOKEN")
+try:
+    from kaggle_secrets import UserSecretsClient
+    HF_TOKEN = UserSecretsClient().get_secret("HF_TOKEN")
+except Exception:
+    HF_TOKEN = os.environ.get("HF_TOKEN")
 HF_REPO = "barbarabhb/samuel-realtime-parrot-custom"
 if HF_TOKEN:
     # Use huggingface_hub library to create repo if missing and upload
