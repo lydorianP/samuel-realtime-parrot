@@ -12,10 +12,11 @@ from __future__ import annotations
 
 import argparse
 import logging
+import platform
 import sys
 from pathlib import Path
 
-from .audio_io import list_devices, select_input_device, select_output_device
+from .audio_io import list_devices, select_input_device, select_output_device, get_pactl_sink_name
 from .inference import SamuelEngine
 from .pipeline import RealtimePipeline
 from .providers import create_session
@@ -78,6 +79,15 @@ def main(argv: list[str] | None = None):
     except ValueError as e:
         logger.error("Device selection failed: %s", e)
         return 1
+
+    # On Linux, map sounddevice output name to pactl sink name for pacat
+    if out_dev and platform.system() == "Linux":
+        pactl_name = get_pactl_sink_name(out_dev)
+        if pactl_name:
+            logger.info("Mapped output device '%s' to pactl sink '%s'", out_dev, pactl_name)
+            out_dev = pactl_name
+        else:
+            logger.warning("Could not map '%s' to pactl sink; using as-is", out_dev)
 
     # Engine load + warmup
     logger.info("Loading SamuelEngine checkpoint %s", args.checkpoint)

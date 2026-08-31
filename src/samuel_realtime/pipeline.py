@@ -65,12 +65,14 @@ class RealtimePipeline:
     def _resolve_devices(self):
         # Input: smart selection (physical mic preferred over virtual monitor)
         in_dev = select_input_device(self.in_device, auto_physical=True)
-        # Output: smart selection (virtual sink preferred)
-        out_dev = select_output_device(self.out_device)
+        # Output: already resolved by CLI (may be pactl sink name for pacat)
+        out_dev = self.out_device
         if out_dev is None:
-            logger.warning("No virtual output auto-detected — will use default output (may feed speakers)")
-        else:
-            logger.info("Auto virtual output: %s", out_dev)
+            out_dev = select_output_device(None)
+            if out_dev is None:
+                logger.warning("No virtual output auto-detected — will use default output (may feed speakers)")
+            else:
+                logger.info("Auto virtual output: %s", out_dev)
         # Log enumeration
         for d in list_devices():
             logger.debug("dev [%d] %s in=%d out=%d sr=%.0f", d["index"], d["name"], d["max_input_channels"], d["max_output_channels"], d.get("default_samplerate", 0))
@@ -152,29 +154,35 @@ class RealtimePipeline:
         # On Linux with Pulse/PipeWire, use pacat/pw-cat to avoid PortAudio concurrent Input+Output malloc bug.
         # On Windows, use sounddevice OutputStream to CABLE Input.
         use_pulse = platform.system() == "Linux" and shutil.which("pacat") is not None
-        # Resolve sink name for pacat: pactl sink names are e.g. SamuelMic (not description)
+        # Resolve sink name for pacat: always use pacat on Linux to avoid PortAudio concurrent I/O bug
         pulse_sink = None
         if use_pulse:
-            # Try to map description to sink name via pactl; fallback to out_dev
+            # Map sounddevice description to pactl sink name
             try:
                 import subprocess as sp
-
-                # out_dev may be "Samuel_Virtual_Mic" (description) or "SamuelMic" (name)
-                # Try both; pacat accepts sink name
-                candidates = [out_dev, "SamuelMic", "Samuel_Virtual_Mic"]
-                # Query pactl sinks to find exact name
-                try:
-                    out = sp.check_output(["pactl", "list", "sinks", "short"], text=True)
+                out = sp.check_output(["pactl", "list", "sinks", "short"], text=True)
+                # Try to find pactl sink name matching out_dev
+                # out_dev could be sounddevice description or index
+                pulse_sink = None
+                for line in out.splitlines():
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        sink_name = parts[1]
+                        # Check if out_dev matches sink name or description
+                        if out_dev and (out_dev.lower() in line.lower() or sink_name.lower() == out_dev.lower()):
+                            pulse_sink = sink_name
+                            break
+                # Fallback: try common virtual sink names
+                if pulse_sink is None:
                     for line in out.splitlines():
                         parts = line.split()
                         if len(parts) >= 2:
                             sink_name = parts[1]
-                            if sink_name in candidates or any(c in line for c in candidates):
+                            if sink_name in ("SamuelMic", "Samuel_Virtual_Mic"):
                                 pulse_sink = sink_name
                                 break
-                    pulse_sink = pulse_sink or "SamuelMic"
-                except Exception:
-                    pulse_sink = "SamuelMic"
+                # Final fallback
+                pulse_sink = pulse_sink or out_dev or "SamuelMic"
                 logger.info("Using pacat pulse output to sink '%s' (from %s)", pulse_sink, out_dev)
             except Exception as e:
                 logger.warning("Pulse sink resolve failed (%s), fallback to %s", e, out_dev)

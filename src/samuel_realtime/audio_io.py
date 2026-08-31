@@ -231,6 +231,35 @@ def select_output_device(
     return None
 
 
+def get_pactl_sink_name(sounddevice_name: str) -> str | None:
+    """Map sounddevice output device name/description to pactl sink name.
+
+    sounddevice uses PortAudio device descriptions (e.g., "CDS.KT USB Audio Analog Stereo")
+    pactl uses PulseAudio sink names (e.g., "alsa_output.usb-KTMicro_CDS.KT_USB_Audio_2020-02-20-0000-0000-0000-00.analog-stereo")
+
+    This function attempts to find the pactl sink name by matching keywords.
+    """
+    import subprocess
+    try:
+        out = subprocess.check_output(["pactl", "list", "sinks", "short"], text=True)
+        # Extract keywords from sounddevice name (remove common prefixes/suffixes)
+        keywords = sounddevice_name.lower().split()
+        # Filter out generic words
+        keywords = [k for k in keywords if k not in ("audio", "analog", "stereo", "digital", "output", "input", "device")]
+        
+        for line in out.splitlines():
+            parts = line.split()
+            if len(parts) >= 2:
+                sink_name = parts[1]
+                line_lower = line.lower()
+                # Match if all keywords appear in the pactl line
+                if all(k in line_lower for k in keywords):
+                    return sink_name
+        return None
+    except Exception:
+        return None
+
+
 def play_test_tone(
     device: str | int | None = None,
     duration: float = 1.5,
