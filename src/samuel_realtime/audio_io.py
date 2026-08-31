@@ -69,23 +69,38 @@ def find_virtual_devices() -> dict:
     virtual_output = None
     virtual_input = None
 
+    # First pass: exact signature matches
     for d in devices:
         name = d.get("name", "")
-        # Output devices have max_output_channels > 0
         if d.get("max_output_channels", 0) > 0 and virtual_output is None:
-            if _matches(name, out_sigs) or any(t in name.lower() for t in tokens):
-                # Prefer exact signature match
+            if _matches(name, out_sigs):
                 virtual_output = d
-        # Input devices have max_input_channels > 0
         if d.get("max_input_channels", 0) > 0 and virtual_input is None:
             if _matches(name, in_sigs):
                 virtual_input = d
 
-    # Second pass: if no input found, look for "Monitor of Samuel*" by token
+    # Second pass: token-based fuzzy match (for variants like "VB-Audio Virtual Cable")
+    if virtual_output is None:
+        for d in devices:
+            if d.get("max_output_channels", 0) > 0:
+                name = d.get("name", "").lower()
+                if any(t in name for t in tokens):
+                    virtual_output = d
+                    break
     if virtual_input is None:
         for d in devices:
             if d.get("max_input_channels", 0) > 0:
-                if "monitor" in d.get("name", "").lower() and "samuel" in d.get("name", "").lower():
+                name = d.get("name", "").lower()
+                if any(t in name for t in tokens):
+                    virtual_input = d
+                    break
+
+    # Third pass (Linux): "Monitor of Samuel*" by token
+    if virtual_input is None and system != "Windows":
+        for d in devices:
+            if d.get("max_input_channels", 0) > 0:
+                name = d.get("name", "").lower()
+                if "monitor" in name and "samuel" in name:
                     virtual_input = d
                     break
 
@@ -121,6 +136,98 @@ def get_virtual_input_name(prefer: list[str] | None = None) -> str | None:
             for d in info["devices"]:
                 if p.lower() in d.get("name", "").lower() and d.get("max_input_channels", 0) > 0:
                     return d["name"]
+    return None
+
+
+def select_input_device(
+    preferred: str | int | None = None,
+    auto_physical: bool = True,
+) -> str | int | None:
+    """Select input device with smart defaults.
+
+    Priority:
+    1. Explicit `preferred` (name or index)
+    2. Auto-detect physical microphone (max_input_channels > 0, not virtual monitor)
+    3. Virtual input (monitor of virtual sink) if no physical found
+    4. None -> sounddevice default
+
+    Args:
+        preferred: Explicit device name substring or index
+        auto_physical: If True and no preferred, try to find a physical mic
+
+    Returns:
+        Device name string, index, or None for default
+    """
+    devices = list_devices()
+    system = platform.system()
+
+    # 1. Explicit preferred
+    if preferred is not None:
+        if isinstance(preferred, int):
+            if 0 <= preferred < len(devices):
+                return preferred
+        else:
+            # Substring match
+            for d in devices:
+                if preferred.lower() in d.get("name", "").lower() and d.get("max_input_channels", 0) > 0:
+                    return d["name"]
+            raise ValueError(f"Input device '{preferred}' not found or has no input channels")
+
+    # 2. Auto-detect physical microphone (exclude virtual monitors)
+    if auto_physical:
+        for d in devices:
+            if d.get("max_input_channels", 0) > 0:
+                name = d.get("name", "").lower()
+                # Skip known virtual monitors
+                if any(tok in name for tok in ["monitor", "cable", "vb-audio", "samuel", "null-sink"]):
+                    continue
+                # Prefer built-in/headset mics
+                return d["name"]
+
+    # 3. Fallback to virtual input (monitor)
+    virt = get_virtual_input_name()
+    if virt:
+        return virt
+
+    # 4. Default
+    return None
+
+
+def select_output_device(
+    preferred: str | int | None = None,
+) -> str | int | None:
+    """Select output device with smart defaults.
+
+    Priority:
+    1. Explicit `preferred` (name or index)
+    2. Auto-detect virtual sink (CABLE Input on Windows, Samuel_Virtual_Mic on Linux)
+    3. None -> sounddevice default (may be speakers!)
+
+    Args:
+        preferred: Explicit device name substring or index
+
+    Returns:
+        Device name string, index, or None for default
+    """
+    devices = list_devices()
+
+    # 1. Explicit preferred
+    if preferred is not None:
+        if isinstance(preferred, int):
+            if 0 <= preferred < len(devices):
+                return preferred
+        else:
+            for d in devices:
+                if preferred.lower() in d.get("name", "").lower() and d.get("max_output_channels", 0) > 0:
+                    return d["name"]
+            raise ValueError(f"Output device '{preferred}' not found or has no output channels")
+
+    # 2. Auto-detect virtual sink
+    virt = get_virtual_output_name()
+    if virt:
+        return virt
+
+    # 3. Default (warn: may be speakers)
     return None
 
 

@@ -15,7 +15,7 @@ import logging
 import sys
 from pathlib import Path
 
-from .audio_io import list_devices
+from .audio_io import list_devices, select_input_device, select_output_device
 from .inference import SamuelEngine
 from .pipeline import RealtimePipeline
 from .providers import create_session
@@ -55,8 +55,12 @@ def main(argv: list[str] | None = None):
             print(f"[{d['index']}] {d['name']}  in:{d['max_input_channels']} out:{d['max_output_channels']} sr:{d.get('default_samplerate')}")
         return 0
 
-    # Resolve 'default' string
+    # Resolve devices using smart selectors
+    # --in-device: "default"/"auto"/None = auto-detect physical mic; explicit name/index = use that
+    # --out-device: "default"/"auto"/None = auto-detect virtual sink; explicit name/index = use that
     in_dev = None if args.in_device in (None, "default", "auto") else args.in_device
+    out_dev = None if args.out_device in (None, "default", "auto") else args.out_device
+
     # Try int conversion for index
     for attr in ["in_device", "out_device"]:
         val = getattr(args, attr)
@@ -66,6 +70,14 @@ def main(argv: list[str] | None = None):
                 continue
             except (ValueError, TypeError):
                 pass
+
+    # Apply smart selection (uses audio_io.select_* functions)
+    try:
+        in_dev = select_input_device(in_dev, auto_physical=True)
+        out_dev = select_output_device(out_dev)
+    except ValueError as e:
+        logger.error("Device selection failed: %s", e)
+        return 1
 
     # Engine load + warmup
     logger.info("Loading SamuelEngine checkpoint %s", args.checkpoint)
@@ -102,15 +114,15 @@ def main(argv: list[str] | None = None):
     vad_ms = int(args.vad_silence * 1000)
     pipeline = RealtimePipeline(
         engine=engine,
-        in_device=in_dev if args.in_device != "default" else None,
-        out_device=args.out_device,
+        in_device=in_dev,
+        out_device=out_dev,
         provider=args.provider,
         vad_silence_ms=vad_ms,
         onnx_session=onnx_session,
     )
 
     logger.info("Starting pipeline: in=%s out=%s provider=%s onnx=%s vad_silence=%.2fs",
-                in_dev, args.out_device, args.provider, args.onnx, args.vad_silence)
+                in_dev, out_dev, args.provider, args.onnx, args.vad_silence)
     logger.info("Speak now — pipeline will parrot after ~%.0fms silence. Ctrl+C to stop.", vad_ms)
     # Also log auto-detected devices
     try:

@@ -17,7 +17,7 @@ import numpy as np
 import sounddevice as sd
 import soxr
 
-from .audio_io import get_virtual_input_name, get_virtual_output_name, list_devices
+from .audio_io import get_virtual_input_name, get_virtual_output_name, list_devices, select_input_device, select_output_device
 from .inference import SamuelEngine
 from .vad import VADProcessor
 
@@ -63,15 +63,14 @@ class RealtimePipeline:
         self.output_sr = OUTPUT_SR
 
     def _resolve_devices(self):
-        # Input: physical mic default if None
-        in_dev = self.in_device
-        out_dev = self.out_device
+        # Input: smart selection (physical mic preferred over virtual monitor)
+        in_dev = select_input_device(self.in_device, auto_physical=True)
+        # Output: smart selection (virtual sink preferred)
+        out_dev = select_output_device(self.out_device)
         if out_dev is None:
-            out_dev = get_virtual_output_name()
-            if out_dev is None:
-                logger.warning("No virtual output auto-detected — will use default output (may feed speakers)")
-            else:
-                logger.info("Auto virtual output: %s", out_dev)
+            logger.warning("No virtual output auto-detected — will use default output (may feed speakers)")
+        else:
+            logger.info("Auto virtual output: %s", out_dev)
         # Log enumeration
         for d in list_devices():
             logger.debug("dev [%d] %s in=%d out=%d sr=%.0f", d["index"], d["name"], d["max_input_channels"], d["max_output_channels"], d.get("default_samplerate", 0))
