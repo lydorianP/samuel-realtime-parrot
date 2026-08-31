@@ -44,8 +44,8 @@ def select_providers(requested: str | None = None) -> list[str]:
     if requested:
         r = requested.lower()
         if r == "webgpu":
-            # "WebGPU" is the canonic name; some builds expose "WebGPUExecutionProvider"
-            for cand in ["WebGPUExecutionProvider", "WebGPU"]:
+            # "WebGPU" is the canonic name; some builds expose "WebGPUExecutionProvider" or "WebGpuExecutionProvider"
+            for cand in ["WebGpuExecutionProvider", "WebGPUExecutionProvider", "WebGPU"]:
                 if has(cand):
                     return [cand, "CPUExecutionProvider"]
             logger.warning("WebGPU requested but not available; falling back to CPU")
@@ -69,7 +69,7 @@ def select_providers(requested: str | None = None) -> list[str]:
     # Auto
     if system == "Windows":
         # Prefer WebGPU (which on Windows routes via DirectML internally), else DML, else CPU
-        for cand in ["WebGPUExecutionProvider", "WebGPU"]:
+        for cand in ["WebGpuExecutionProvider", "WebGPUExecutionProvider", "WebGPU"]:
             if has(cand):
                 return [cand, "CPUExecutionProvider"]
         if has("DmlExecutionProvider"):
@@ -77,7 +77,7 @@ def select_providers(requested: str | None = None) -> list[str]:
         return ["CPUExecutionProvider"]
     else:
         # Linux
-        for cand in ["WebGPUExecutionProvider", "WebGPU"]:
+        for cand in ["WebGpuExecutionProvider", "WebGPUExecutionProvider", "WebGPU"]:
             if has(cand):
                 return [cand, "CPUExecutionProvider"]
         # MIGraphX is allowed on Linux but not preferred by default (WebGPU already covers Vulkan)
