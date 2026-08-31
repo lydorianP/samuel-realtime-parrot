@@ -35,8 +35,9 @@ class RealtimePipeline:
         out_device: str | int | None = None,
         provider: str | None = None,  # "webgpu"/"dml"/"cpu"/None auto
         vad_silence_ms: int = 450,
-        blocksize: int = 512,
+        blocksize: int = 2048,  # Increased from 512: Silero VAD needs ~2048@44.1k (~743@16k) for reliable detection
         onnx_session=None,  # if provider is onnx, pass session
+        input_gain: float = 1.0,  # Input gain multiplier (for low-sensitivity mics)
     ):
         self.engine = engine
         self.in_device = in_device
@@ -45,6 +46,7 @@ class RealtimePipeline:
         self.onnx_session = onnx_session
         self.blocksize = blocksize
         self.vad_silence_ms = vad_silence_ms
+        self.input_gain = input_gain
 
         self.audio_in_q: queue.Queue[np.ndarray] = queue.Queue(maxsize=2)
         self.synth_out_q: queue.Queue[np.ndarray] = queue.Queue(maxsize=2)
@@ -80,15 +82,23 @@ class RealtimePipeline:
 
     # --- Thread A ---
     def _capture_thread(self, in_dev, out_dev):
-        logger.info("Thread A (Capture+VAD) start: in=%s block=%d sr=%d silence=%dms", in_dev, self.blocksize, SAMUEL_SR, self.vad_silence_ms)
+        # Get device's native sample rate
+        try:
+            dev_info = sd.query_devices(in_dev)
+            native_sr = int(dev_info.get("default_samplerate", SAMUEL_SR))
+        except Exception:
+            native_sr = SAMUEL_SR
+        
+        logger.info("Thread A (Capture+VAD) start: in=%s block=%d sr=%d->%d silence=%dms", 
+                    in_dev, self.blocksize, native_sr, SAMUEL_SR, self.vad_silence_ms)
         try:
             with sd.InputStream(
                 device=in_dev,
-                samplerate=SAMUEL_SR,
+                samplerate=native_sr,
                 channels=1,
                 blocksize=self.blocksize,
             ) as stream:
-                logger.info("InputStream opened (blocking read, not callback — avoids RT malloc)")
+                logger.info("InputStream opened at %dHz (blocking read, not callback)", native_sr)
                 while not self.stop_event.is_set():
                     try:
                         data, overflowed = stream.read(self.blocksize)
@@ -99,6 +109,16 @@ class RealtimePipeline:
                     if overflowed:
                         logger.warning("Input overflowed: %s", overflowed)
                     block = data[:, 0] if data.ndim > 1 else data
+                    # Apply input gain (for low-sensitivity mics)
+                    if self.input_gain != 1.0:
+                        block = block * self.input_gain
+                    # Resample to SAMUEL_SR if needed
+                    if native_sr != SAMUEL_SR:
+                        try:
+                            block = soxr.resample(block.astype(np.float32), native_sr, SAMUEL_SR)
+                        except Exception as e:
+                            logger.error("Capture resample failed: %s", e)
+                            continue
                     try:
                         self.vad_processor.process_block(block.astype(np.float32, copy=False))
                     except Exception as e:

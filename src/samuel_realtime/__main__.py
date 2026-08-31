@@ -38,6 +38,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--out-device", dest="out_device", default=None, help="Output device name/index (auto virtual mic: CABLE Input / Samuel_Virtual_Mic)")
     p.add_argument("--provider", default="auto", choices=["auto", "webgpu", "dml", "migraphx", "cpu"], help="ONNX provider (auto selects WebGPU/Dml/CPU, enforces No HIP on Windows)")
     p.add_argument("--vad-silence", type=float, default=0.45, help="Silence threshold seconds to trigger inference (0.45 low-latency)")
+    p.add_argument("--input-gain", type=float, default=1.0, help="Input gain multiplier (e.g., 5.0 for quiet mics)")
     p.add_argument("--checkpoint", default="hf:vvolhejn/samuel", help="hf:vvolhejn/samuel or local last.pt")
     p.add_argument("--onnx", type=Path, default=None, help="Path to samuel_controller.onnx (enables ONNX provider); if omitted uses PyTorch")
     p.add_argument("--list-devices", action="store_true", help="List audio devices and exit")
@@ -59,10 +60,8 @@ def main(argv: list[str] | None = None):
     # Resolve devices using smart selectors
     # --in-device: "default"/"auto"/None = auto-detect physical mic; explicit name/index = use that
     # --out-device: "default"/"auto"/None = auto-detect virtual sink; explicit name/index = use that
-    in_dev = None if args.in_device in (None, "default", "auto") else args.in_device
-    out_dev = None if args.out_device in (None, "default", "auto") else args.out_device
 
-    # Try int conversion for index
+    # Try int conversion for index FIRST
     for attr in ["in_device", "out_device"]:
         val = getattr(args, attr)
         if val is not None:
@@ -71,6 +70,10 @@ def main(argv: list[str] | None = None):
                 continue
             except (ValueError, TypeError):
                 pass
+
+    # Now resolve with converted values
+    in_dev = None if args.in_device in (None, "default", "auto") else args.in_device
+    out_dev = None if args.out_device in (None, "default", "auto") else args.out_device
 
     # Apply smart selection (uses audio_io.select_* functions)
     try:
@@ -129,6 +132,7 @@ def main(argv: list[str] | None = None):
         provider=args.provider,
         vad_silence_ms=vad_ms,
         onnx_session=onnx_session,
+        input_gain=args.input_gain,
     )
 
     logger.info("Starting pipeline: in=%s out=%s provider=%s onnx=%s vad_silence=%.2fs",
