@@ -118,8 +118,8 @@ class SamuelEngine:
     for WebGPU/DirectML selection.
     """
 
-    def __init__(self, checkpoint: str = "hf:vvolhejn/samuel", device: str | None = None):
-        self.checkpoint_ref = checkpoint
+    def __init__(self, checkpoint: str = None, device: str | None = None):
+        self.checkpoint_ref = checkpoint or os.environ.get("SAMUEL_CHECKPOINT", "hf:vvolhejn/samuel")
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
         self.model: PinkTromboneController | None = None
         self.run_cfg: dict | None = None

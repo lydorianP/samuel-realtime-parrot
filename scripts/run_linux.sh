@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # run_linux.sh — Samuel Realtime Parrot launcher for Linux (PipeWire)
-# Usage: ./scripts/run_linux.sh [--onnx models/samuel_controller.onnx] [--provider webgpu]
+# Usage: ./scripts/run_linux.sh [--onnx models/samuel_custom_controller.onnx] [--provider webgpu]
+# Env vars: SAMUEL_CHECKPOINT, SAMUEL_ONNX, SAMUEL_VAD_SILENCE, SAMUEL_INPUT_GAIN, SAMUEL_CONFIG
 
 set -euo pipefail
 
@@ -15,13 +16,25 @@ else
     echo "[warn] No .venv found — using system Python"
 fi
 
-# Default arguments
+# Smart defaults: auto-detect fine-tuned checkpoint and ONNX model
 CHECKPOINT="hf:vvolhejn/samuel"
+if [[ -f "samuel_custom_last.pt" ]]; then
+    CHECKPOINT="samuel_custom_last.pt"
+fi
+
 ONNX=""
+if [[ -f "models/samuel_custom_controller.onnx" ]]; then
+    ONNX="models/samuel_custom_controller.onnx"
+elif [[ -f "models/samuel_controller.onnx" ]]; then
+    ONNX="models/samuel_controller.onnx"
+fi
+
 PROVIDER="auto"
 VAD_SILENCE="0.45"
+INPUT_GAIN="1.0"
 LOG_LEVEL="INFO"
 LIST_DEVICES=false
+CONFIG=""
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -29,7 +42,9 @@ while [[ $# -gt 0 ]]; do
         --onnx) ONNX="$2"; shift 2 ;;
         --provider) PROVIDER="$2"; shift 2 ;;
         --vad-silence) VAD_SILENCE="$2"; shift 2 ;;
+        --input-gain) INPUT_GAIN="$2"; shift 2 ;;
         --checkpoint) CHECKPOINT="$2"; shift 2 ;;
+        --config) CONFIG="$2"; shift 2 ;;
         --list-devices) LIST_DEVICES=true; shift ;;
         --log-level) LOG_LEVEL="$2"; shift 2 ;;
         *) echo "Unknown option: $1"; exit 1 ;;
@@ -43,7 +58,9 @@ echo "Checkpoint: ${CHECKPOINT}"
 [[ -n "${ONNX}" ]] && echo "ONNX: ${ONNX}"
 echo "Provider: ${PROVIDER}"
 echo "VAD Silence: ${VAD_SILENCE} sec"
+echo "Input Gain: ${INPUT_GAIN}"
 echo "Log Level: ${LOG_LEVEL}"
+[[ -n "${CONFIG}" ]] && echo "Config: ${CONFIG}"
 echo ""
 
 # Check virtual mic
@@ -59,12 +76,8 @@ echo ""
 if [[ "${LIST_DEVICES}" == true ]]; then
     uv run python -m samuel_realtime --list-devices --log-level "${LOG_LEVEL}"
 else
-    ONNX_ARG=()
-    [[ -n "${ONNX}" ]] && ONNX_ARG=(--onnx "${ONNX}")
-    uv run python -m samuel_realtime \
-        --checkpoint "${CHECKPOINT}" \
-        "${ONNX_ARG[@]}" \
-        --provider "${PROVIDER}" \
-        --vad-silence "${VAD_SILENCE}" \
-        --log-level "${LOG_LEVEL}"
+    ARGS=(--checkpoint "${CHECKPOINT}" --provider "${PROVIDER}" --vad-silence "${VAD_SILENCE}" --input-gain "${INPUT_GAIN}" --log-level "${LOG_LEVEL}")
+    [[ -n "${ONNX}" ]] && ARGS+=(--onnx "${ONNX}")
+    [[ -n "${CONFIG}" ]] && ARGS+=(--config "${CONFIG}")
+    uv run python -m samuel_realtime "${ARGS[@]}"
 fi
