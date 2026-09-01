@@ -89,14 +89,16 @@ class RealtimePipeline:
         except Exception:
             native_sr = SAMUEL_SR
         
-        logger.info("Thread A (Capture+VAD) start: in=%s block=%d sr=%d->%d silence=%dms", 
-                    in_dev, self.blocksize, native_sr, SAMUEL_SR, self.vad_silence_ms)
+        latency = max(self.blocksize / native_sr * 3, 0.1)
+        logger.info("Thread A (Capture+VAD) start: in=%s block=%d sr=%d->%d silence=%dms latency=%.3fs", 
+                    in_dev, self.blocksize, native_sr, SAMUEL_SR, self.vad_silence_ms, latency)
         try:
             with sd.InputStream(
                 device=in_dev,
                 samplerate=native_sr,
                 channels=1,
                 blocksize=self.blocksize,
+                latency=latency,
             ) as stream:
                 logger.info("InputStream opened at %dHz (blocking read, not callback)", native_sr)
                 while not self.stop_event.is_set():
